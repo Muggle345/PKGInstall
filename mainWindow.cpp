@@ -13,6 +13,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->setupUi(this);
 
     this->setWindowTitle("PKGInstall");
+    this->setFixedSize(this->width(), this->height());
 
     connect(ui->browsePkgButton, &QPushButton::clicked, this, &MainWindow::pkgButtonClicked);
     connect(ui->browseFolderButton, &QPushButton::clicked, this, &MainWindow::folderButtonClicked);
@@ -22,6 +23,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->extractButton, &QPushButton::clicked, this, [this]() {
         InstallDragDropPkg(pkgPath);
     });
+
+    connect(ui->settingsButton, &QPushButton::clicked, this, [this]() {
+        // TODO
+    });
+
+    connect(ui->loadConfigButton, &QPushButton::clicked, this, [this]() {
+        // TODO
+    });
+
+    connect(ui->setOutputButton, &QPushButton::clicked, this, [this]() {
+        // TODO
+    });
+
+    connect(ui->separateUpdateCheckBox, &QCheckBox::checkStateChanged, this,
+            [this](Qt::CheckState state) { useSeparateUpdate = state; });
 }
 
 void MainWindow::folderButtonClicked() {
@@ -73,10 +89,8 @@ void MainWindow::InstallDragDropPkg(std::filesystem::path file) {
         auto category = psf.GetString("CATEGORY");
 
         std::filesystem::path game_install_dir = outputPath;
-        bool separateUpdate = true;                  // TODO
-
         QString pkgType = QString::fromStdString(pkg.GetPkgFlags());
-        bool use_game_update = pkgType.contains("PATCH") && separateUpdate;
+        bool use_game_update = pkgType.contains("PATCH") && useSeparateUpdate;
 
         // Default paths
         auto game_folder_path = game_install_dir / pkg.GetTitleID();

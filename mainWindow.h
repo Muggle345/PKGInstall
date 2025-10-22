@@ -28,9 +28,11 @@ private:
 
     Ui::MainWindow *ui;
 
+    bool useSeparateUpdate = true;
     std::filesystem::path outputPath = "";
     std::filesystem::path dlcPath = "";
     std::filesystem::path pkgPath = "";
+    std::filesystem::path tomlPath = "";
     PKG pkg;
     PSF psf;
 

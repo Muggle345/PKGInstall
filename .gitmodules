@@ -1,12 +1,20 @@
 [submodule "externals/cryptopp"]
 	path = externals/cryptopp
 	url = https://github.com/rainmakerv3/ext-cryptopp
+	shallow = true
 [submodule "externals/cryptopp-cmake"]
 	path = externals/cryptopp-cmake
 	url = https://github.com/rainmakerv3/ext-cryptopp-cmake
+	shallow = true
 [submodule "externals/fmt"]
 	path = externals/fmt
 	url = https://github.com/shadps4-emu/ext-fmt
+	shallow = true
 [submodule "externals/zlib-ng"]
 	path = externals/zlib-ng
 	url = https://github.com/shadps4-emu/ext-zlib-ng
+	shallow = true
+[submodule "externals/toml11"]
+	path = externals/toml11
+	url = https://github.com/ToruNiina/toml11
+	shallow = true

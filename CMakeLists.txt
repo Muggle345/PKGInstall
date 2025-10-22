@@ -50,6 +50,7 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 find_package(ZLIB 1.3 MODULE)
 find_package(fmt 10.2.0 CONFIG)
+find_package(toml11 4.2.0 CONFIG)
 
 add_subdirectory(externals)
 
@@ -91,7 +92,7 @@ endif()
 
 target_link_libraries(PKGInstall PRIVATE Qt6::Widgets Qt6::Concurrent)
 
-target_link_libraries(PKGInstall PRIVATE cryptopp::cryptopp ZLIB::ZLIB fmt::fmt)
+target_link_libraries(PKGInstall PRIVATE cryptopp::cryptopp ZLIB::ZLIB fmt::fmt toml11::toml11)
 
 set_target_properties(PKGInstall PROPERTIES
     WIN32_EXECUTABLE TRUE
