@@ -79,6 +79,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->setOutputButton, &QPushButton::clicked, this, [this]() {
         if (!ui->folderComboBox->currentText().isEmpty()) {
             ui->outputLineEdit->setText(ui->folderComboBox->currentText());
+            outputPath = PathFromQString(ui->folderComboBox->currentText());
         } else {
             QMessageBox::information(
                 this, "Error",
@@ -111,6 +112,9 @@ void MainWindow::LoadSettings() {
         std::filesystem::create_directories(settingsFile.parent_path());
     }
 
+    if (!std::filesystem::exists(settingsFile))
+        return;
+
     toml::value data;
     try {
         std::ifstream ifs;
@@ -137,7 +141,7 @@ void MainWindow::LoadSettings() {
 
     QString dlcPathString;
     PathToQString(dlcPathString, dlcPath);
-    ui->outputLineEdit->setText(dlcPathString);
+    ui->dlcLineEdit->setText(dlcPathString);
 
     std::vector<std::string> install_dirs;
     if (data.contains("ShadPS4InstallFolders")) {
@@ -165,8 +169,11 @@ void MainWindow::SaveSettings() {
         ifs.open(settingsFile, std::ios_base::binary);
         data = toml::parse(ifs, std::string{fmt::UTF(settingsFile.filename().u8string()).data});
     } catch (std::exception& ex) {
-        QMessageBox::critical(NULL, "Filesystem error", ex.what());
-        return;
+        // if it doesn't exist, the save function will create the file
+        if (std::filesystem::exists(settingsFile)) {
+            QMessageBox::critical(NULL, "Filesystem error", ex.what());
+            return;
+        }
     }
 
     std::vector<std::string> game_dirs;
@@ -176,12 +183,9 @@ void MainWindow::SaveSettings() {
     }
 
     data["ShadPS4InstallFolders"]["Folders"] = game_dirs;
-    data["Paths"]["outputPath"] = "";
-    data["Paths"]["dlcPath"] = "";
-    data["Settings"]["UseSeparateUpdateFolder"] = "Dark";
-
-    useSeparateUpdate = toml::find_or<bool>(data, "Settings", "UseSeparateUpdateFolder", true);
-    ui->separateUpdateCheckBox->setChecked(useSeparateUpdate);
+    data["Paths"]["outputPath"] = std::string{fmt::UTF(outputPath.u8string()).data};
+    data["Paths"]["dlcPath"] = std::string{fmt::UTF(dlcPath.u8string()).data};
+    data["Settings"]["UseSeparateUpdateFolder"] = useSeparateUpdate;
 
     std::ofstream file(settingsFile, std::ios::binary);
     file << data;
@@ -189,16 +193,19 @@ void MainWindow::SaveSettings() {
 }
 
 void MainWindow::LoadFoldersFromShadps4File() {
-    if (!std::filesystem::exists(settingsFile.parent_path())) {
-        std::filesystem::create_directories(settingsFile.parent_path());
-    }
+
+    QString shadConfig =
+        QFileDialog::getOpenFileName(this, "Load shadPS4 config.toml file", QDir::currentPath(),
+                                     "shadPS4 config file (config.toml)");
+
+    std::filesystem::path shadConfigFile = PathFromQString(shadConfig);
 
     toml::value data;
     try {
         std::ifstream ifs;
         ifs.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-        ifs.open(settingsFile, std::ios_base::binary);
-        data = toml::parse(ifs, std::string{fmt::UTF(settingsFile.filename().u8string()).data});
+        ifs.open(shadConfigFile, std::ios_base::binary);
+        data = toml::parse(ifs, std::string{fmt::UTF(shadConfigFile.filename().u8string()).data});
     } catch (std::exception& ex) {
         QMessageBox::critical(NULL, "Filesystem error", ex.what());
         return;
@@ -211,6 +218,7 @@ void MainWindow::LoadFoldersFromShadps4File() {
 
         if (!arr.empty()) {
             ui->folderComboBox->clear();
+        } else {
             QMessageBox::information(this, "PKGInstall",
                                      "No game install folders found in this file.");
         }
@@ -220,6 +228,11 @@ void MainWindow::LoadFoldersFromShadps4File() {
                 install_dirs.push_back(folder.as_string());
             }
         }
+
+        dlcPath = toml::find_fs_path_or(installFolders, "addonInstallDir", dlcPath);
+        QString path;
+        PathToQString(path, dlcPath);
+        ui->dlcLineEdit->setText(path);
     }
 
     for (size_t i = 0; i < install_dirs.size(); i++) {
@@ -255,7 +268,6 @@ void MainWindow::pkgButtonClicked() {
 }
 
 void MainWindow::InstallDragDropPkg(std::filesystem::path file) {
-
     if (!std::filesystem::exists(pkgPath) || !std::filesystem::exists(outputPath)) {
         QMessageBox::information(this, "Error", "Existing PKG file and output folder must be set");
         return;
