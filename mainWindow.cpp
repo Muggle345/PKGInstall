@@ -4,10 +4,55 @@
 #include <QProgressDialog>
 #include <QStyle>
 #include <QtConcurrent/QtConcurrentMap>
+#include <toml.hpp>
 
 #include "./ui_mainWindow.h"
 #include "mainWindow.h"
 #include "src/loader.h"
+
+#ifndef MAX_PATH
+#ifdef _WIN32
+#include <Shlobj.h>
+#include <windows.h>
+// This is the maximum number of UTF-16 code units permissible in Windows file paths
+#define MAX_PATH 260
+#else
+// This is the maximum number of UTF-8 code units permissible in all other OSes' file paths
+#define MAX_PATH 1024
+#endif
+#endif
+
+namespace toml {
+template <typename TC, typename K>
+std::filesystem::path find_fs_path_or(const basic_value<TC>& v, const K& ky,
+                                      std::filesystem::path opt) {
+    try {
+        auto str = find<std::string>(v, ky);
+        if (str.empty()) {
+            return opt;
+        }
+        std::u8string u8str{(char8_t*)&str.front(), (char8_t*)&str.back() + 1};
+        return std::filesystem::path{u8str};
+    } catch (...) {
+        return opt;
+    }
+}
+
+} // namespace toml
+
+namespace fmt {
+template <typename T = std::string_view>
+struct UTF {
+    T data;
+
+    explicit UTF(const std::u8string_view view) {
+        data = view.empty() ? T{} : T{(const char*)&view.front(), (const char*)&view.back() + 1};
+    }
+
+    explicit UTF(const std::u8string& str) : UTF(std::u8string_view{str}) {}
+};
+
+} // namespace fmt
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
@@ -15,36 +60,179 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     this->setWindowTitle("PKGInstall");
     this->setFixedSize(this->width(), this->height());
 
+    GetSettingsFileLocation();
+    LoadSettings();
+
     connect(ui->browsePkgButton, &QPushButton::clicked, this, &MainWindow::pkgButtonClicked);
     connect(ui->browseFolderButton, &QPushButton::clicked, this, &MainWindow::folderButtonClicked);
     connect(ui->dlcFolderButton, &QPushButton::clicked, this, &MainWindow::dlcButtonClicked);
     connect(ui->closeButton, &QPushButton::clicked, this, &MainWindow::close);
 
-    connect(ui->extractButton, &QPushButton::clicked, this, [this]() {
-        InstallDragDropPkg(pkgPath);
-    });
+    connect(ui->extractButton, &QPushButton::clicked, this,
+            [this]() { InstallDragDropPkg(pkgPath); });
 
-    connect(ui->settingsButton, &QPushButton::clicked, this, [this]() {
-        // TODO
-    });
+    connect(ui->settingsButton, &QPushButton::clicked, this, [this]() { SaveSettings(); });
 
-    connect(ui->loadConfigButton, &QPushButton::clicked, this, [this]() {
-        // TODO
-    });
+    connect(ui->loadConfigButton, &QPushButton::clicked, this,
+            [this]() { LoadFoldersFromShadps4File(); });
 
     connect(ui->setOutputButton, &QPushButton::clicked, this, [this]() {
-        // TODO
+        if (!ui->folderComboBox->currentText().isEmpty()) {
+            ui->outputLineEdit->setText(ui->folderComboBox->currentText());
+        } else {
+            QMessageBox::information(
+                this, "Error",
+                "Folder list is empty, load a shadPS4 config.toml file to get list.");
+        }
     });
 
     connect(ui->separateUpdateCheckBox, &QCheckBox::checkStateChanged, this,
             [this](Qt::CheckState state) { useSeparateUpdate = state; });
 }
 
+void MainWindow::GetSettingsFileLocation() {
+#if defined(__linux__)
+    const char* xdg_data_home = getenv("XDG_DATA_HOME");
+    if (xdg_data_home != nullptr && strlen(xdg_data_home) > 0) {
+        settingsFile = std::filesystem::path(xdg_data_home) / "PKGInstall" / "settings.toml";
+    } else {
+        settingsFile = std::filesystem::path(getenv("HOME")) / ".local" / "share" / "PKGInstall" /
+                       "settings.toml";
+    }
+#elif _WIN32
+    TCHAR appdata[MAX_PATH] = {0};
+    SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, 0, appdata);
+    settingsFile = std::filesystem::path(appdata) / "PKGInstall" / "settings.toml";
+#endif
+}
+
+void MainWindow::LoadSettings() {
+    if (!std::filesystem::exists(settingsFile.parent_path())) {
+        std::filesystem::create_directories(settingsFile.parent_path());
+    }
+
+    toml::value data;
+    try {
+        std::ifstream ifs;
+        ifs.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        ifs.open(settingsFile, std::ios_base::binary);
+        data = toml::parse(ifs, std::string{fmt::UTF(settingsFile.filename().u8string()).data});
+    } catch (std::exception& ex) {
+        QMessageBox::critical(NULL, "Filesystem error", ex.what());
+        return;
+    }
+
+    useSeparateUpdate = toml::find_or<bool>(data, "Settings", "UseSeparateUpdateFolder", true);
+    ui->separateUpdateCheckBox->setChecked(useSeparateUpdate);
+
+    if (data.contains("Paths")) {
+        const toml::value& launcher = data.at("Paths");
+        outputPath = toml::find_fs_path_or(launcher, "outputPath", {});
+        dlcPath = toml::find_fs_path_or(launcher, "dlcPath", {});
+    }
+
+    QString outputPathString;
+    PathToQString(outputPathString, outputPath);
+    ui->outputLineEdit->setText(outputPathString);
+
+    QString dlcPathString;
+    PathToQString(dlcPathString, dlcPath);
+    ui->outputLineEdit->setText(dlcPathString);
+
+    std::vector<std::string> install_dirs;
+    if (data.contains("ShadPS4InstallFolders")) {
+        const toml::value& installFolders = data.at("ShadPS4InstallFolders");
+        toml::array arr = toml::find_or<toml::array>(installFolders, "Folders", {});
+        for (const auto& folder : arr) {
+            if (folder.is_string()) {
+                install_dirs.push_back(folder.as_string());
+            }
+        }
+    }
+
+    for (size_t i = 0; i < install_dirs.size(); i++) {
+        QString path_string;
+        PathToQString(path_string, install_dirs[i]);
+        ui->folderComboBox->addItem(path_string);
+    }
+}
+
+void MainWindow::SaveSettings() {
+    toml::value data;
+    try {
+        std::ifstream ifs;
+        ifs.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        ifs.open(settingsFile, std::ios_base::binary);
+        data = toml::parse(ifs, std::string{fmt::UTF(settingsFile.filename().u8string()).data});
+    } catch (std::exception& ex) {
+        QMessageBox::critical(NULL, "Filesystem error", ex.what());
+        return;
+    }
+
+    std::vector<std::string> game_dirs;
+    for (int i = 0; i < ui->folderComboBox->count(); ++i) {
+        std::string itemText = ui->folderComboBox->itemText(i).toStdString();
+        game_dirs.push_back(itemText);
+    }
+
+    data["ShadPS4InstallFolders"]["Folders"] = game_dirs;
+    data["Paths"]["outputPath"] = "";
+    data["Paths"]["dlcPath"] = "";
+    data["Settings"]["UseSeparateUpdateFolder"] = "Dark";
+
+    useSeparateUpdate = toml::find_or<bool>(data, "Settings", "UseSeparateUpdateFolder", true);
+    ui->separateUpdateCheckBox->setChecked(useSeparateUpdate);
+
+    std::ofstream file(settingsFile, std::ios::binary);
+    file << data;
+    file.close();
+}
+
+void MainWindow::LoadFoldersFromShadps4File() {
+    if (!std::filesystem::exists(settingsFile.parent_path())) {
+        std::filesystem::create_directories(settingsFile.parent_path());
+    }
+
+    toml::value data;
+    try {
+        std::ifstream ifs;
+        ifs.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        ifs.open(settingsFile, std::ios_base::binary);
+        data = toml::parse(ifs, std::string{fmt::UTF(settingsFile.filename().u8string()).data});
+    } catch (std::exception& ex) {
+        QMessageBox::critical(NULL, "Filesystem error", ex.what());
+        return;
+    }
+
+    std::vector<std::string> install_dirs;
+    if (data.contains("GUI")) {
+        const toml::value& installFolders = data.at("GUI");
+        toml::array arr = toml::find_or<toml::array>(installFolders, "installDirs", {});
+
+        if (!arr.empty()) {
+            ui->folderComboBox->clear();
+            QMessageBox::information(this, "PKGInstall",
+                                     "No game install folders found in this file.");
+        }
+
+        for (const auto& folder : arr) {
+            if (folder.is_string()) {
+                install_dirs.push_back(folder.as_string());
+            }
+        }
+    }
+
+    for (size_t i = 0; i < install_dirs.size(); i++) {
+        QString path_string;
+        PathToQString(path_string, install_dirs[i]);
+        ui->folderComboBox->addItem(path_string);
+    }
+}
+
 void MainWindow::folderButtonClicked() {
     QString folder = QFileDialog::getExistingDirectory(nullptr,
                                                        "Set Output folder",
                                                        QDir::homePath());
-
     ui->outputLineEdit->setText(folder);
     outputPath = PathFromQString(folder);
 }
@@ -68,8 +256,8 @@ void MainWindow::pkgButtonClicked() {
 
 void MainWindow::InstallDragDropPkg(std::filesystem::path file) {
 
-    if (pkgPath == "" || outputPath == "") {
-        QMessageBox::information(this, "Error", "PKG file and output folder must be set");
+    if (!std::filesystem::exists(pkgPath) || !std::filesystem::exists(outputPath)) {
+        QMessageBox::information(this, "Error", "Existing PKG file and output folder must be set");
         return;
     }
 

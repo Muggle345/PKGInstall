@@ -25,14 +25,19 @@ private:
                                                       const std::string &game_id,
                                                       int max_depth);
     void InstallDragDropPkg(std::filesystem::path file);
+    void LoadSettings();
+    void SaveSettings();
+    void LoadFoldersFromShadps4File();
+    void GetSettingsFileLocation();
 
-    Ui::MainWindow *ui;
+    Ui::MainWindow* ui;
 
     bool useSeparateUpdate = true;
     std::filesystem::path outputPath = "";
     std::filesystem::path dlcPath = "";
     std::filesystem::path pkgPath = "";
     std::filesystem::path tomlPath = "";
+    std::filesystem::path settingsFile;
     PKG pkg;
     PSF psf;
 
