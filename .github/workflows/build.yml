@@ -1,0 +1,247 @@
+name: Build and Prerelease
+
+on:
+  push:
+    branches: [ "master"]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  get-info:
+    runs-on: ubuntu-24.04
+    outputs:
+      date: ${{ steps.vars.outputs.date }}
+      shorthash: ${{ steps.vars.outputs.shorthash }}
+      fullhash: ${{ steps.vars.outputs.fullhash }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Get date and git hash
+      id: vars
+      run: |
+        echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+        echo "shorthash=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "fullhash=$(git rev-parse HEAD)" >> $GITHUB_ENV
+        echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        echo "shorthash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "fullhash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  clang-format:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Install
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main'
+        sudo apt update
+        sudo apt install clang-format-19
+    - name: Build
+      env:
+        COMMIT_RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+      run: bash ./.ci/clang-format.sh
+
+  build-windows:
+    runs-on: windows-2025
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: 6.9.2
+        host: windows
+        target: desktop
+        arch: win64_msvc2022_64
+        archives: qtbase qttools
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    - name: Deploy and Package
+      run: |
+        mkdir upload
+        mkdir upload/qtplugins
+        move build/Release/PKGInstall.exe upload
+        cp dist/qt.conf upload/qt.conf
+        windeployqt --plugindir upload/qtplugins --no-compiler-runtime --no-system-d3d-compiler --no-system-dxc-compiler --dir upload upload/PKGInstall.exe
+        Compress-Archive -Path upload/* -DestinationPath PKGPKGInstall-win64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}.zip
+    - name: Upload Windows Qt artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PKGInstall-win64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: upload/
+
+  build-linux:
+    runs-on: ubuntu-24.04
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Add LLVM repository
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main'
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt install -y libx11-dev libxext-dev libwayland-dev libdecor-0-dev libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libfuse2 clang-19 mold build-essential qt6-base-dev qt6-tools-dev qt6-multimedia-dev libasound2-dev libpulse-dev libopenal-dev libudev-dev
+
+    - name: Configure CMake
+      run: cmake --fresh -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold"
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $(nproc)
+
+    - name: Package and Upload Linux(ubuntu64) artifact 
+      run: |
+        ls -la ${{ github.workspace }}/build/PKGInstall
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: PKGInstall-ubuntu64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: ${{ github.workspace }}/build/PKGInstall
+
+  build-linux-AppImage:
+    runs-on: ubuntu-24.04
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Add LLVM repository
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main'
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt install -y libx11-dev libxext-dev libwayland-dev libdecor-0-dev libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libfuse2 clang-19 mold build-essential qt6-base-dev qt6-tools-dev qt6-multimedia-dev libasound2-dev libpulse-dev libopenal-dev libudev-dev
+
+    - name: Configure CMake
+      run: cmake --fresh -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold"
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Build AppImage
+      run: |
+        wget --no-verbose "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+        wget --no-verbose "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+        chmod +x linuxdeploy*.AppImage
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir -d ${{github.workspace}}/dist/PKGInstall.desktop  -e ${{github.workspace}}/build/PKGInstall -i ${{github.workspace}}/dist/PKGIcon.png --plugin qt
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+        mv PKGInstall-x86_64.AppImage PKGInstall.AppImage
+
+    - name: Package and Upload Linux AppImage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PKGInstall-linux-AppImage-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: PKGInstall.AppImage
+
+  pre-release:
+    if: github.ref == 'refs/heads/master' && github.repository == 'Muggle345/PKGInstall' && github.event_name == 'push'
+    needs: [get-info, build-windows, build-linux]
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+  
+    - name: Compress individual directories (without parent directory)
+      run: |
+        cd ./artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            dir_name=${dir%/}
+            echo "Creating zip for $dir_name"
+            (cd "$dir_name" && zip -r "../${dir_name}.zip" .)
+          fi
+        done
+  
+    - name: Get latest release information
+      id: get_latest_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        api_url="https://api.github.com/repos/${{ github.repository }}"
+        latest_release_info=$(curl -H "Authorization: token $GITHUB_TOKEN" "$api_url/releases/latest")
+        echo "last_release_tag=$(echo "$latest_release_info" | jq -r '.tag_name')" >> $GITHUB_ENV
+
+    - name: Create Pre-Release on GitHub
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      id: create_release
+      uses: ncipollo/release-action@v1
+      with:
+        name: "PKGInstall-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}"
+        tag: "PKGInstall-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}"
+        draft: false
+        prerelease: true
+        body: "Prerelease build"
+        artifacts: ./artifacts/*.zip
+        
+    - name: Get current pre-release information
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        api_url="https://api.github.com/repos/${{ github.repository }}/releases"
+        
+        # Get all releases (sorted by date)
+        releases=$(curl -H "Authorization: token $GITHUB_TOKEN" "$api_url")
+        
+        # Capture the most recent pre-release (assuming the first one is the latest)
+        current_release=$(echo "$releases" | jq -c '.[] | select(.prerelease == true) | .published_at' | sort -r | head -n 1)
+        
+        # Remove extra quotes from captured date
+        current_release=$(echo $current_release | tr -d '"')
+                
+        # Export the current published_at to be available for the next step
+        echo "CURRENT_PUBLISHED_AT=$current_release" >> $GITHUB_ENV
+    
+    - name: Delete old pre-releases and tags
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        api_url="https://api.github.com/repos/${{ github.repository }}/releases"
+        
+        # Get current pre-releases
+        releases=$(curl -H "Authorization: token $GITHUB_TOKEN" "$api_url")
+                
+        # Remove extra quotes from captured date
+        CURRENT_PUBLISHED_AT=$(echo $CURRENT_PUBLISHED_AT | tr -d '"')
+        
+        # Convert CURRENT_PUBLISHED_AT para timestamp Unix
+        current_published_ts=$(date -d "$CURRENT_PUBLISHED_AT" +%s)
+        
+        # Identify pre-releases
+        echo "$releases" | jq -c '.[] | select(.prerelease == true)' | while read -r release; do
+          release_date=$(echo "$release" | jq -r '.published_at')
+          release_id=$(echo "$release" | jq -r '.id')
+          release_tag=$(echo "$release" | jq -r '.tag_name')
+          
+          # Remove extra quotes from captured date
+          release_date=$(echo $release_date | tr -d '"')
+          
+          # Convert release_date para timestamp Unix
+          release_date_ts=$(date -d "$release_date" +%s)
+                    
+          # Compare timestamps and delete old pre-releases
+          if [[ "$release_date_ts" -lt "$current_published_ts" ]]; then
+            echo "Deleting old pre-release: $release_id from $release_date with tag: $release_tag"
+            # Delete the pre-release
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" "$api_url/$release_id"
+            # Delete the tag
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/$release_tag"
+          else
+            echo "Skipping pre-release: $release_id (newer or same date)"
+          fi
+        done

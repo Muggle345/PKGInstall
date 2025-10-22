@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=PKGInstall
+Exec=PKGInstall
+Terminal=false
+Type=Application
+Icon=PKGIcon
+Comment=PKG PKGInstall
+Categories=Game;
+StartupWMClass=PKGPKGInstall;

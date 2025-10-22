@@ -1,0 +1,12 @@
+[submodule "externals/cryptopp"]
+	path = externals/cryptopp
+	url = https://github.com/rainmakerv3/ext-cryptopp
+[submodule "externals/cryptopp-cmake"]
+	path = externals/cryptopp-cmake
+	url = https://github.com/rainmakerv3/ext-cryptopp-cmake
+[submodule "externals/fmt"]
+	path = externals/fmt
+	url = https://github.com/shadps4-emu/ext-fmt
+[submodule "externals/zlib-ng"]
+	path = externals/zlib-ng
+	url = https://github.com/shadps4-emu/ext-zlib-ng
