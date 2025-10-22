@@ -148,7 +148,7 @@ jobs:
 
   pre-release:
     if: github.ref == 'refs/heads/master' && github.repository == 'Muggle345/PKGInstall' && github.event_name == 'push'
-    needs: [get-info, build-windows, build-linux]
+    needs: [get-info, build-windows, build-linux, build-linux-AppImage]
     runs-on: ubuntu-24.04
     steps:
     - name: Download all artifacts
