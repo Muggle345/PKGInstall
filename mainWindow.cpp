@@ -1,8 +1,10 @@
 #include <QFileDialog>
 #include <QFutureWatcher>
 #include <QMessageBox>
+#include <QProgressBar>
 #include <QProgressDialog>
 #include <QStyle>
+#include <QStyleHints>
 #include <QtConcurrent/QtConcurrentMap>
 #include <toml.hpp>
 
@@ -467,10 +469,36 @@ void MainWindow::InstallDragDropPkg(std::filesystem::path file) {
                 dialog.setAutoClose(true);
                 dialog.setRange(0, nfiles);
 
-                dialog.setGeometry(QStyle::alignedRect(Qt::LeftToRight,
-                                                       Qt::AlignCenter,
-                                                       dialog.size(),
-                                                       this->geometry()));
+                bool isSystemDarkMode;
+#if defined(__linux__)
+                const QPalette defaultPalette;
+                const auto text = defaultPalette.color(QPalette::WindowText);
+                const auto window = defaultPalette.color(QPalette::Window);
+                if (text.lightness() > window.lightness()) {
+                    isSystemDarkMode = true;
+                } else {
+                    isSystemDarkMode = false;
+                }
+#else
+                if (QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark) {
+                    isSystemDarkMode = true;
+                } else {
+                    isSystemDarkMode = false;
+                }
+#endif
+
+                if (isSystemDarkMode) {
+                    dialog.setStyleSheet(
+                        "QProgressBar::chunk { background-color: #0000A3; border-radius: 5px; }"
+                        "QProgressBar { border: 2px solid grey; border-radius: 5px; text-align: "
+                        "center; }");
+
+                } else {
+                    dialog.setStyleSheet(
+                        "QProgressBar::chunk { background-color: #aaaaaa; border-radius: 5px; }"
+                        "QProgressBar { border: 2px solid grey; border-radius: 5px; text-align: "
+                        "center; }");
+                }
 
                 QFutureWatcher<void> futureWatcher;
                 connect(&futureWatcher, &QFutureWatcher<void>::finished, this, [=, this]() {
