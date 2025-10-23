@@ -186,7 +186,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string>Shadps4 Install Folders:</string>
+          <string>shadPS4 Install Folders:</string>
          </property>
         </widget>
        </item>
@@ -200,7 +200,7 @@
        <item>
         <widget class="QPushButton" name="setOutputButton">
          <property name="text">
-          <string>Set shadPS4 install folder as Output Folder</string>
+          <string>Set the above folder as Output Folder</string>
          </property>
         </widget>
        </item>
