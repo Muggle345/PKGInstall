@@ -129,6 +129,12 @@
       <height>24</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <pointsize>12</pointsize>
+      <bold>true</bold>
+     </font>
+    </property>
     <property name="text">
      <string>Extract</string>
     </property>
@@ -138,7 +144,7 @@
      <rect>
       <x>100</x>
       <y>230</y>
-      <width>80</width>
+      <width>101</width>
       <height>24</height>
      </rect>
     </property>
