@@ -200,6 +200,9 @@ void MainWindow::LoadFoldersFromShadps4File() {
         QFileDialog::getOpenFileName(this, "Load shadPS4 config.toml file", QDir::currentPath(),
                                      "shadPS4 config file (config.toml)");
 
+    if (shadConfig.isEmpty())
+        return;
+
     std::filesystem::path shadConfigFile = PathFromQString(shadConfig);
 
     toml::value data;
