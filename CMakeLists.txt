@@ -13,7 +13,19 @@ endif()
 
 project(PKGInstall LANGUAGES CXX)
 
-set(BASE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
+if(APPLE)
+    enable_language(OBJC)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 14)
+endif()
+
+option(FORCE_UAC "Requires running as Admin on Windows" ON)
+
+# First, determine whether to use CMAKE_OSX_ARCHITECTURES or CMAKE_SYSTEM_PROCESSOR.
+if (APPLE AND CMAKE_OSX_ARCHITECTURES)
+    set(BASE_ARCHITECTURE "${CMAKE_OSX_ARCHITECTURES}")
+else()
+    set(BASE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
 
 # Next, match common architecture strings down to a known common value.
 if (BASE_ARCHITECTURE MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
@@ -66,7 +78,7 @@ set(PROJECT_SOURCES
         src/keys.h
         src/loader.cpp
         src/loader.h
-	src/nt_api.cpp
+	    src/nt_api.cpp
         src/nt_api.h
         src/pfs.h
         src/pkg.cpp
@@ -80,6 +92,7 @@ set(PROJECT_SOURCES
         mainWindow.cpp
         mainWindow.h
         mainWindow.ui
+        dist/PKGIcon.icns
 )
 
 qt_add_executable(PKGInstall
@@ -96,7 +109,14 @@ target_link_libraries(PKGInstall PRIVATE cryptopp::cryptopp ZLIB::ZLIB fmt::fmt 
 
 set_target_properties(PKGInstall PROPERTIES
     WIN32_EXECUTABLE TRUE
+    ${BUNDLE_ID_OPTION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_ICON_FILE "PKGIcon.icns"
 )
+
+set_source_files_properties(dist/PKGIcon.icns PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
 
 target_include_directories(PKGInstall PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dist)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")

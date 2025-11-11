@@ -57,7 +57,7 @@ jobs:
     - name: Setup Qt
       uses: jurplel/install-qt-action@v4
       with:
-        version: 6.9.2
+        version: 6.9.3
         host: windows
         target: desktop
         arch: win64_msvc2022_64
@@ -73,7 +73,7 @@ jobs:
         move build/Release/PKGInstall.exe upload
         cp dist/qt.conf upload/qt.conf
         windeployqt --plugindir upload/qtplugins --no-compiler-runtime --no-system-d3d-compiler --no-system-dxc-compiler --dir upload upload/PKGInstall.exe
-        Compress-Archive -Path upload/* -DestinationPath PKGPKGInstall-win64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}.zip
+        Compress-Archive -Path upload/* -DestinationPath PKGInstall-win64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}.zip
     - name: Upload Windows Qt artifact
       uses: actions/upload-artifact@v4
       with:
@@ -165,9 +165,49 @@ jobs:
         name: PKGInstall-linux-AppImage-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
         path: PKGInstall.AppImage
 
+  build-macos:
+    runs-on: macos-15
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup latest Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest
+
+    - name: Setup Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: 6.9.3
+        host: mac
+        target: desktop
+        arch: clang_64
+        archives: qtbase qttools
+        modules: qtmultimedia
+
+    - name: Configure CMake
+      run: cmake --fresh -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_OSX_ARCHITECTURES=x86_64
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Package and Upload macOS Qt artifact
+      run: |
+        mkdir upload
+        mv ${{github.workspace}}/build/PKGInstall.app upload
+        macdeployqt upload/PKGInstall.app
+        tar cf PKGInstall-mac.tar.gz -C upload .
+    - uses: actions/upload-artifact@v4
+      with:
+        name: PKGInstall-mac-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: PKGInstall-mac.tar.gz
+
   pre-release:
     if: github.ref == 'refs/heads/master' && github.repository == 'Muggle345/PKGInstall' && github.event_name == 'push'
-    needs: [get-info, build-windows, build-linux, build-linux-AppImage]
+    needs: [get-info, build-windows, build-linux, build-linux-AppImage, build-mac]
     runs-on: ubuntu-24.04
     steps:
     - name: Download all artifacts
