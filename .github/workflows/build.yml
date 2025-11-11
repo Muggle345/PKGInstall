@@ -165,7 +165,7 @@ jobs:
         name: PKGInstall-linux-AppImage-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
         path: PKGInstall.AppImage
 
-  build-macos:
+  build-mac:
     runs-on: macos-15
     needs: get-info
     steps:
